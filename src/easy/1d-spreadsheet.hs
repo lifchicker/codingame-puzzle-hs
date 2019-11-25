@@ -15,6 +15,9 @@ data Op = Value Var
         | Mult Var Var
   deriving (Eq, Show)
 
+value :: Int -> Op
+value x = Value $ Val x
+
 strToVar :: String -> Var
 strToVar s@(x:xs) = 
   case x of '_' -> None
@@ -34,18 +37,32 @@ indexed = zipWith (,) [0..]
 lookupTable :: [a] -> M.Map Int a
 lookupTable e = M.fromList $ indexed e
 
-eval :: M.Map Int Op -> Var -> Int
-eval l (Val v) = v
-eval l (Ref r) = evaluate l (l M.! r)
+type MapToOp = M.Map Int Op
 
--- evaluate :: Op -> Int
-evaluate l (Value v) = eval l v
-evaluate l (Add x y) = (eval l x) + (eval l y)
-evaluate l (Sub x y) = (eval l x) - (eval l y)
-evaluate l (Mult x y) = (eval l x) * (eval l y)
+eval :: MapToOp -> Var -> (MapToOp, Int)
+eval m (Val v) = (m, v)
+eval m (Ref r) = ((M.insertWith (\x _ -> x) r (value o) m1), o)
+  where (m1, o) = evaluate m (m M.! r)
+
+evaluate :: MapToOp -> Op -> (MapToOp, Int)
+evaluate m (Value v) = (m1, l)
+  where (m1, l) = eval m v
+
+evaluate m (Add x y) = (m2, l + r)
+  where (m1, l) = eval m x
+        (m2, r) = eval m2 y
+
+evaluate m (Sub x y) = (m2, l - r)
+  where (m1, l) = eval m x
+        (m2, r) = eval m2 y
+
+evaluate m (Mult x y) = (m2, l * r)
+  where (m1, l) = eval m x
+        (m2, r) = eval m2 y
+
 
 evalSpreadsheetCells :: [Op] -> [Int]
-evalSpreadsheetCells xs = map (evaluate l) xs
+evalSpreadsheetCells xs = foldl' (evaluate l) xs
   where l = lookupTable xs
 
 main :: IO ()
