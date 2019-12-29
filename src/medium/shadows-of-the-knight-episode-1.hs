@@ -64,7 +64,7 @@ main = do
     
     input_line <- getLine
     let input = words input_line
-    let field = BoundingBox 0 0 (read (input!!0)) (read (input!!1))
+    let field = BoundingBox (-1) (-1) (read (input!!0)) (read (input!!1))
     hPutStrLn stderr (show field)
     input_line <- getLine
     let n = read input_line :: Int -- maximum number of turns before game over.
