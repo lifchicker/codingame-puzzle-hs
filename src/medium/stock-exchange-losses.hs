@@ -3,8 +3,9 @@
 import System.IO
 import Control.Monad
 
-losses (x:[]) = [0]
-losses (x:xs) = (maximum (map (x-) xs)) : (losses xs)
+f (b,xs) a = (m, m:xs) where m = max a b
+maxs xs = foldl f ((head xs), []) xs
+best xs = minimum $ zipWith (-) xs (reverse $ snd $ maxs xs)
 
 main :: IO ()
 main = do
@@ -13,7 +14,6 @@ main = do
     input_line <- getLine
     let n = read input_line :: Int
     input_line <- getLine
-    let stocks = map (\x -> read x :: Int) $ words input_line
-    let best = -(maximum $ losses stocks) 
-    putStrLn (show best)
+    let l = map (\x -> read x :: Int) $ words input_line
+    putStrLn (show $ best l)
     return ()
