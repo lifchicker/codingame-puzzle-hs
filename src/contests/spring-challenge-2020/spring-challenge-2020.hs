@@ -42,10 +42,16 @@ findMe xs = fromJust $ find mine xs
 
 findClosestPellet pac pellets = foldr (\p1 p2 -> if (distance pac p1) < (distance pac p2) then p1 else p2) (head pellets) (tail pellets)
 
-getNextMove pacs pellets = findClosestPellet (findMe pacs) pellets
+getNextMove pac pellets = findClosestPellet pac pellets
 
 showMove i (x,y) = "MOVE " ++ (show i) ++ " " ++ (show x) ++ " " ++ (show y)
 
+showNextMove pacs pellets = showMove (pacid myPac) nextMove
+  where myPac = findMe pacs
+        nextMove = _pelletCoord $ getNextMove myPac pellets
+
+
+-- MAIN --
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering -- DO NOT REMOVE
@@ -85,13 +91,8 @@ main = do
 
     pellets <- replicateM visiblepelletcount $ readPellets
 
-    -- hPutStrLn stderr "Debug messages..."
-
-    let myPac = findMe pacs
-    let nextMove = _pelletCoord $ getNextMove pacs pellets
-
     -- MOVE <pacId> <x> <y>
-    putStrLn $ showMove (pacid myPac) nextMove
+    putStrLn $ showNextMove pacs pellets
 
 readPacs = do
   input_line <- getLine
