@@ -37,8 +37,7 @@ distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
         dy = y1 - y2
 
 
-findMe :: Foldable t => t Pac -> Pac
-findMe xs = fromJust $ find mine xs
+findMine pacs = filter mine pacs
 
 findClosestPellet pac pellets = foldr (\p1 p2 -> if (distance pac p1) < (distance pac p2) then p1 else p2) (head pellets) (tail pellets)
 
@@ -46,9 +45,9 @@ getNextMove pac pellets = findClosestPellet pac pellets
 
 showMove i (x,y) = "MOVE " ++ (show i) ++ " " ++ (show x) ++ " " ++ (show y)
 
-showNextMove pacs pellets = showMove (pacid myPac) nextMove
-  where myPac = findMe pacs
-        nextMove = _pelletCoord $ getNextMove myPac pellets
+showNextMove pacs pellets = intercalate " | " nextMoves
+  where myPacs = findMine pacs
+        nextMoves = map (\p -> showMove (pacid p) (_pelletCoord $ getNextMove p pellets)) myPacs
 
 
 -- MAIN --
