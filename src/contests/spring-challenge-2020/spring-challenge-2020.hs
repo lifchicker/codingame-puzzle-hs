@@ -6,19 +6,42 @@ import Data.Maybe
 
 type Coord = (Int, Int)
 
+data PacType = ROCK | PAPER | SCISSORS
+  deriving Show
+
+toPacType s = case s of 
+              "ROCK" -> ROCK
+              "PAPER" -> PAPER
+              "SCISSORS" -> SCISSORS
+
+ROCK `beats` SCISSORS = True
+SCISSORS `beats` PAPER = True
+PAPER `beats` ROCK = True
+beats _ _ = False
+
+data AbilityType = SWITCH | SPEED
+  deriving Show
+
+toAbilityType s = case s of
+                  "SWITCH" -> SWITCH
+                  "SPEED" -> SPEED
+
 class HasCoord c where
   coord :: c -> Coord
 
 data Pac = Pac { pacid::Int
                , mine::Bool 
-               , _pacCoord::Coord
+               , pacCoord::Coord
+               , pacType::PacType
+               , speedTurnsLeft::Int
+               , abilityCooldown::Int
 } deriving Show
 
 instance HasCoord Pac where
-  coord (Pac _ _ c) = c
+  coord (Pac _ _ c _ _ _) = c
 
-data Pellet = Pellet { _pelletCoord::Coord
-                     , _value::Int
+data Pellet = Pellet { pelletCoord::Coord
+                     , value::Int
 } deriving Show
 
 instance HasCoord Pellet where
@@ -37,6 +60,8 @@ distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
         dy = y1 - y2
 
 
+-- list of current issues:
+-- 1. few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
 findMine pacs = filter mine pacs
 
 findClosestPellet pac pellets = foldr (\p1 p2 -> if (distance pac p1) < (distance pac p2) then p1 else p2) (head pellets) (tail pellets)
@@ -47,7 +72,7 @@ showMove i (x,y) = "MOVE " ++ (show i) ++ " " ++ (show x) ++ " " ++ (show y)
 
 showNextMove pacs pellets = intercalate " | " nextMoves
   where myPacs = findMine pacs
-        nextMoves = map (\p -> showMove (pacid p) (_pelletCoord $ getNextMove p pellets)) myPacs
+        nextMoves = map (\p -> showMove (pacid p) (pelletCoord $ getNextMove p pellets)) myPacs
 
 
 -- MAIN --
@@ -104,7 +129,7 @@ readPacs = do
   let typeid = input!!4 -- unused in wood leagues
   let speedturnsleft = read (input!!5) :: Int -- unused in wood leagues
   let abilitycooldown = read (input!!6) :: Int -- unused in wood leagues
-  return (Pac pacid mine (x,y) )
+  return (Pac pacid mine (x,y) (toPacType typeid) speedturnsleft abilitycooldown)
 
 readPellets = do
   input_line <- getLine
