@@ -126,7 +126,7 @@ findClosest p (x:xs) = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) the
 --    if distance for closest enemy is <2 and can beat -> continue
 --    if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
 --    else -> run away (just move for now)
-beatIfCan p e = if and [isClose p e, canBeat p e] then Nothing else Just (switchAgains p e)
+beatIfCan p e = if and [isClose p e, canBeat p e] then Just (switchAgains p e) else Nothing
 switchIfCanBeat p e = if and [isClose p e, not (canBeat p e), canUseAbility p] then Just (switchAgains p e) else Nothing
 
 pickFightStrategy p [] = []
