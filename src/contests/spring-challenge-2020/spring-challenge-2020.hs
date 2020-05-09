@@ -123,10 +123,8 @@ filterEnemies pacs = filter (not.mine) pacs
 findClosest p (x:xs) = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) x xs
 
 -- Simple fight strategy:
---    if distance for closest enemy is <2 and can beat -> continue
---    if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
+--    if distance for closest enemy is <2 and can't beat with current ability and can use ability -> change type
 --    else -> run away (just move for now)
-beatIfCan p e = if and [isClose p e, canBeat p e] then Just (switchAgains p e) else Nothing
 switchIfCanBeat p e = if and [isClose p e, not (canBeat p e), canUseAbility p] then Just (switchAgains p e) else Nothing
 
 pickFightStrategy p [] = []
@@ -134,7 +132,7 @@ pickFightStrategy p es = case strategies of
                          Just s -> [s]
                          Nothing -> [] 
   where e = findClosest p es
-        strategies = msum [beatIfCan p e, switchIfCanBeat p e]
+        strategies = msum [switchIfCanBeat p e]
 
 -- list of current issues:
 -- 1. problem: few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
