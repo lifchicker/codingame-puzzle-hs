@@ -27,7 +27,7 @@ getOffenderType t = case t of
                     PAPER -> SCISSORS
                     ROCK -> PAPER
 
-
+getOffenderTypeAgainst p = getOffenderType (pacType p)
 ---------------------------------------
 -- AbilityType
 ---------------------------------------
@@ -50,6 +50,10 @@ data Pac = Pac { pacid::Id
                , speedTurnsLeft::Int
                , abilityCooldown::Int
 } deriving Show
+
+canUseAbility p = (abilityCooldown p) == 0
+
+canBeat p1 p2 = (pacType p1) `beats` (pacType p2)
 
 
 ---------------------------------------
@@ -87,6 +91,7 @@ distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
         dx = x1 - x2
         dy = y1 - y2
 
+isClose o1 o2 = (distance o1 o2) < 2
 
 ---------------------------------------
 -- Action
@@ -117,16 +122,28 @@ filterMine pacs = filter mine pacs
 filterEnemies pacs = filter (not.mine) pacs
 
 findClosest p xs = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) (head xs) (tail xs)
--- if distance for closest enemy is <2 and can beat -> continue
--- if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
--- else -> run away
 
+-- Simple fight strategy:
+--    if distance for closest enemy is <2 and can beat -> continue
+--    if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
+--    else -> run away
+beatIfCan p e = if and [isClose p e, canBeat p e] then Nothing else Just (switch p (getOffenderTypeAgainst e))
+switchIfCanBeat p e = if and [isClose p e, not (canBeat p e), canUseAbility p] then Just (switch p (getOffenderTypeAgainst e)) else Nothing
 
-getNextMove pac pellets = findClosest pac pellets
+pickFightStrategy p [] = []
+pickFightStrategy p es = case strategies of
+                         Just s -> [s]
+                         Nothing -> [] 
+  where e = findClosest p es
+        strategies = msum [beatIfCan p e, switchIfCanBeat p e]
+
+nextMove pac pellets = move pac (findClosest pac pellets)
+nextAction p ps es = head $ (pickFightStrategy p es) ++ [nextMove p ps]
 
 showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
   where myPacs = filterMine pacs
-        nextMoves = map (\p -> move p (getNextMove p pellets)) myPacs
+        enemies = filterEnemies pacs
+        nextMoves = map (\p -> nextAction p pellets enemies) myPacs
 
 
 ---------------------------------------
