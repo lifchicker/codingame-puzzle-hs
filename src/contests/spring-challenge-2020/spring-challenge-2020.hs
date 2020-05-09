@@ -6,6 +6,9 @@ import Data.Maybe
 
 type Coord = (Int, Int)
 
+---------------------------------------
+-- PacType
+---------------------------------------
 data PacType = ROCK | PAPER | SCISSORS
   deriving Show
 
@@ -19,6 +22,15 @@ SCISSORS `beats` PAPER = True
 PAPER `beats` ROCK = True
 beats _ _ = False
 
+getOffenderType t = case t of 
+                    SCISSORS -> ROCK
+                    PAPER -> SCISSORS
+                    ROCK -> PAPER
+
+
+---------------------------------------
+-- AbilityType
+---------------------------------------
 data AbilityType = SWITCH | SPEED
   deriving Show
 
@@ -26,10 +38,12 @@ toAbilityType s = case s of
                   "SWITCH" -> SWITCH
                   "SPEED" -> SPEED
 
-class HasCoord c where
-  coord :: c -> Coord
 
-data Pac = Pac { pacid::Int
+---------------------------------------
+-- Pac
+---------------------------------------
+type Id = Int
+data Pac = Pac { pacid::Id
                , mine::Bool 
                , pacCoord::Coord
                , pacType::PacType
@@ -37,20 +51,34 @@ data Pac = Pac { pacid::Int
                , abilityCooldown::Int
 } deriving Show
 
-instance HasCoord Pac where
-  coord (Pac _ _ c _ _ _) = c
 
+---------------------------------------
+-- Pellet
+---------------------------------------
 data Pellet = Pellet { pelletCoord::Coord
                      , value::Int
 } deriving Show
 
-instance HasCoord Pellet where
-  coord (Pellet c _) = c
 
+---------------------------------------
+-- World
+---------------------------------------
 data World = World { _pacs::[Pac]
                    , _pellets::[Pellet]
 } deriving Show
 
+
+---------------------------------------
+-- HasCoord
+---------------------------------------
+class HasCoord c where
+  coord :: c -> Coord
+
+instance HasCoord Pac where
+  coord (Pac _ _ c _ _ _) = c
+
+instance HasCoord Pellet where
+  coord (Pellet c _) = c
 
 distance :: (Floating a, HasCoord c1, HasCoord c2) => c2 -> c1 -> a
 distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
@@ -60,22 +88,50 @@ distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
         dy = y1 - y2
 
 
+---------------------------------------
+-- Action
+---------------------------------------
+data Action = Move Id Int Int
+            | Switch Id PacType
+            | Speed Id
+
+instance Show Action where
+  show (Move i x y) = "MOVE " ++ (show i) ++ " " ++ (show x) ++ " " ++ (show y)
+  show (Switch i t) = "SWITCH " ++ (show i) ++ " " ++ (show t)
+  show (Speed i) = "SPEED " ++ (show i)
+
+type Actions = [Action]
+
+move p t = Move (pacid p) (fst c) (snd c) where c = coord t
+switch p t = Switch (pacid p) t
+speed p = Speed (pacid p)
+
+
+---------------------------------------
+-- AI
+---------------------------------------
+
 -- list of current issues:
 -- 1. few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
-findMine pacs = filter mine pacs
+filterMine pacs = filter mine pacs
+filterEnemies pacs = filter (not.mine) pacs
 
-findClosestPellet pac pellets = foldr (\p1 p2 -> if (distance pac p1) < (distance pac p2) then p1 else p2) (head pellets) (tail pellets)
-
-getNextMove pac pellets = findClosestPellet pac pellets
-
-showMove i (x,y) = "MOVE " ++ (show i) ++ " " ++ (show x) ++ " " ++ (show y)
-
-showNextMove pacs pellets = intercalate " | " nextMoves
-  where myPacs = findMine pacs
-        nextMoves = map (\p -> showMove (pacid p) (pelletCoord $ getNextMove p pellets)) myPacs
+findClosest p xs = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) (head xs) (tail xs)
+-- if distance for closest enemy is <2 and can beat -> continue
+-- if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
+-- else -> run away
 
 
+getNextMove pac pellets = findClosest pac pellets
+
+showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
+  where myPacs = filterMine pacs
+        nextMoves = map (\p -> move p (getNextMove p pellets)) myPacs
+
+
+---------------------------------------
 -- MAIN --
+---------------------------------------
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering -- DO NOT REMOVE
