@@ -85,10 +85,10 @@ instance HasCoord Pellet where
   coord (Pellet c _) = c
 
 distance :: (Floating a, HasCoord c1, HasCoord c2) => c2 -> c1 -> a
-distance o1 o2 = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
-  where (x1, y1) = coord o1
-        (x2, y2) = coord o2
-        dx = x1 - x2
+distance o1 o2 = distance2d (coord o1) (coord o2)
+
+distance2d (x1, y1) (x2, y2) = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
+  where dx = x1 - x2
         dy = y1 - y2
 
 isClose o1 o2 = (distance o1 o2) < 2
@@ -108,27 +108,26 @@ instance Show Action where
 type Actions = [Action]
 
 move p t = Move (pacid p) (fst c) (snd c) where c = coord t
-switch p t = Switch (pacid p) t
 speed p = Speed (pacid p)
 
+switch p t = Switch (pacid p) t
+switchAgains p t = switch p $ getOffenderTypeAgainst t
 
 ---------------------------------------
 -- AI
 ---------------------------------------
 
--- list of current issues:
--- 1. few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
 filterMine pacs = filter mine pacs
 filterEnemies pacs = filter (not.mine) pacs
 
-findClosest p xs = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) (head xs) (tail xs)
+findClosest p (x:xs) = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) x xs
 
 -- Simple fight strategy:
 --    if distance for closest enemy is <2 and can beat -> continue
 --    if distance for closest enemy is <2 and can't beat and can use ability -> change type and continue
---    else -> run away
-beatIfCan p e = if and [isClose p e, canBeat p e] then Nothing else Just (switch p (getOffenderTypeAgainst e))
-switchIfCanBeat p e = if and [isClose p e, not (canBeat p e), canUseAbility p] then Just (switch p (getOffenderTypeAgainst e)) else Nothing
+--    else -> run away (just move for now)
+beatIfCan p e = if and [isClose p e, canBeat p e] then Nothing else Just (switchAgains p e)
+switchIfCanBeat p e = if and [isClose p e, not (canBeat p e), canUseAbility p] then Just (switchAgains p e) else Nothing
 
 pickFightStrategy p [] = []
 pickFightStrategy p es = case strategies of
@@ -137,7 +136,14 @@ pickFightStrategy p es = case strategies of
   where e = findClosest p es
         strategies = msum [beatIfCan p e, switchIfCanBeat p e]
 
-nextMove pac pellets = move pac (findClosest pac pellets)
+-- list of current issues:
+-- 1. problem: few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
+--    solution: 
+-- 2. problem: "Prelude.tail: empty list" if no pellets is sight
+--    solution: in the benning I know that all non-walls are pellets, keep the coords of all pellets and remove one when pac step on it coord
+--              when no visibile pellets -> pick one from this list
+nextMove p pes = move p (findClosest p pes)
+
 nextAction p ps es = head $ (pickFightStrategy p es) ++ [nextMove p ps]
 
 showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
@@ -156,7 +162,7 @@ main = do
   -- Grab the pellets as fast as you can!
 
   input_line <- getLine
-  -- hPutStrLn stderr input_line
+  hPutStrLn stderr input_line
   let input = words input_line
   let width = read (input!!0) :: Int -- size of the grid
   let height = read (input!!1) :: Int -- top left corner is (x=0, y=0)
@@ -165,25 +171,25 @@ main = do
   replicateM height $ do
     row <- getLine
     -- one line of the grid: space " " is floor, pound "#" is wall
-    -- hPutStrLn stderr row
+    hPutStrLn stderr row
     return ()
 
   -- game loop
   forever $ do
     input_line <- getLine
-    -- hPutStrLn stderr input_line
+    hPutStrLn stderr input_line
     let input = words input_line
     let myscore = read (input!!0) :: Int
     let opponentscore = read (input!!1) :: Int
     input_line <- getLine
-    -- hPutStrLn stderr input_line
+    hPutStrLn stderr input_line
     let visiblepaccount = read input_line :: Int -- all your pacs and enemy pacs in sight
 
     pacs <- replicateM visiblepaccount $ readPacs
     -- putStrLn (show pacs)
 
     input_line <- getLine
-    -- hPutStrLn stderr input_line
+    hPutStrLn stderr input_line
     let visiblepelletcount = read input_line :: Int -- all pellets in sight
 
     pellets <- replicateM visiblepelletcount $ readPellets
@@ -191,24 +197,34 @@ main = do
     -- MOVE <pacId> <x> <y>
     putStrLn $ showNextMove pacs pellets
 
+
+pacFromString input_line = Pac pacid mine (x,y) (toPacType typeid) speedturnsleft abilitycooldown
+  where
+        input = words input_line
+        pacid = read (input!!0) :: Int -- pac number (unique within a team)
+        mine = (read (input!!1) :: Int) == 1 -- true if this pac is yours
+        x = read (input!!2) :: Int -- position in the grid
+        y = read (input!!3) :: Int -- position in the grid
+        typeid = input!!4 -- the pac's type (ROCK or PAPER or SCISSORS)
+        speedturnsleft = read (input!!5) :: Int -- the number of remaining turns before the speed effect fades
+        abilitycooldown = read (input!!6) :: Int -- the number of turns until you can request a new ability for this pac (SWITCH and SPEED)
+
+
 readPacs = do
   input_line <- getLine
-  -- hPutStrLn stderr input_line
-  let input = words input_line
-  let pacid = read (input!!0) :: Int -- pac number (unique within a team)
-  let mine = (read (input!!1) :: Int) == 1 -- true if this pac is yours
-  let x = read (input!!2) :: Int -- position in the grid
-  let y = read (input!!3) :: Int -- position in the grid
-  let typeid = input!!4 -- unused in wood leagues
-  let speedturnsleft = read (input!!5) :: Int -- unused in wood leagues
-  let abilitycooldown = read (input!!6) :: Int -- unused in wood leagues
-  return (Pac pacid mine (x,y) (toPacType typeid) speedturnsleft abilitycooldown)
+  hPutStrLn stderr input_line
+  return (pacFromString input_line)
+
+
+pelletFromString input_line = Pellet (x,y) value
+  where
+        input = words input_line
+        x = read (input!!0) :: Int
+        y = read (input!!1) :: Int
+        value = read (input!!2) :: Int -- amount of points this pellet is worth
+  
 
 readPellets = do
   input_line <- getLine
-  -- hPutStrLn stderr input_line
-  let input = words input_line
-  let x = read (input!!0) :: Int
-  let y = read (input!!1) :: Int
-  let value = read (input!!2) :: Int -- amount of points this pellet is worth
-  return (Pellet (x,y) value)
+  hPutStrLn stderr input_line
+  return (pelletFromString input_line)
