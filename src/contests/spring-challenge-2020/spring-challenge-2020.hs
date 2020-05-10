@@ -200,7 +200,7 @@ main = do
   let height = read (input!!1) :: Int -- top left corner is (x=0, y=0)
 
   grid <- readGrid height
-  let notVisited = fromList $ toCoord height $ map toFloorYs grid :: Set Coord
+  let notVisited = fromList $ toCoord height $ map toFloorXs grid :: Set Coord
 
   initial <- readNewWorldState notVisited
   -- game loop
@@ -208,8 +208,8 @@ main = do
   return ()
     
 
-toFloorYs xs = map fst $ filter (\(y, c) -> c == ' ')  $ zip [0..] xs
-toCoord h xs = concat $ zipWith (\x xs -> zip (repeat x) xs) [0..h] xs
+toFloorXs xs = map fst $ filter (\(x, c) -> c == ' ')  $ zip [0..] xs
+toCoord h xs = concat $ zipWith (\y xs -> zip xs (repeat y)) [0..h] xs
 
 readGrid height = replicateM height $ do
   row <- getLine
