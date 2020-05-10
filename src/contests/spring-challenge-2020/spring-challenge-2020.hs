@@ -3,7 +3,8 @@ import System.IO
 import Control.Monad
 import Data.List
 import Data.Maybe
-import           Data.Set (Set, fromList, member, delete)
+import qualified Data.Set as S
+import           Data.Set (Set, fromList, member, empty)
 
 
 type Coord = (Int, Int)
@@ -74,6 +75,8 @@ data World = World { notVisited::Set Coord
                    , _pellets::[Pellet]
 } deriving Show
 
+withNotVisited (World n p pe) nv = World nv p pe
+
 data Grid = Grid { width::Int
                  , height::Int
 } deriving Show
@@ -90,7 +93,6 @@ instance HasCoord Pac where
 instance HasCoord Pellet where
   coord (Pellet c _) = c
 
-distance :: (Floating a, HasCoord c1, HasCoord c2) => c2 -> c1 -> a
 distance o1 o2 = distance2d (coord o1) (coord o2)
 
 distance2d (x1, y1) (x2, y2) = 
@@ -114,7 +116,7 @@ instance Show Action where
 
 type Actions = [Action]
 
-move p t = Move (pacid p) (fst c) (snd c) where c = coord t
+move p t = Move (pacid p) (fst t) (snd t)
 speed p = Speed (pacid p)
 
 switch p t = Switch (pacid p) t
@@ -127,7 +129,8 @@ switchAgains p t = switch p $ getOffenderTypeAgainst t
 filterMine pacs = filter mine pacs
 filterEnemies pacs = filter (not.mine) pacs
 
-findClosest p (x:xs) = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) x xs
+findClosestP p (x:xs) = foldr (\o1 o2 -> if (distance p o1) < (distance p o2) then o1 else o2) x xs
+findClosestC p (x:xs) = foldr (\o1 o2 -> if (distance2d p o1) < (distance2d p o2) then o1 else o2) x xs
 
 -- Simple fight strategy:
 --    if distance for closest enemy is <2 and can't beat with current ability and can use ability -> change type
@@ -138,7 +141,7 @@ pickFightStrategy p [] = []
 pickFightStrategy p es = case strategies of
                          Just s -> [s]
                          Nothing -> [] 
-  where e = findClosest p es
+  where e = findClosestP p es
         strategies = msum [switchIfCanBeat p e]
 
 pickSpeedStrategy p [] = if and [canUseAbility p] then [speed p] else []
@@ -149,24 +152,36 @@ pickSpeedStrategy p _ = []
 --    solution: 
 -- 2. problem: "Prelude.tail: empty list" if no pellets is sight
 --    solution: in the benning I know that all non-walls are pellets, keep the coords of all pellets and remove one when pac step on it coord
---              when no visibile pellets -> pick one from this list
 -- possible improvements:
 -- 1. prioritize big pellets over small ones
-nextMove p pes = move p (findClosest p pes)
 
-nextAction p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove p ps]
+-- when no visibile pellets -> pick one from this list of not visited
+nextMove nv p [] = move p (findClosestC (coord p) nv)
+nextMove _ p pes = move p $ coord $ (findClosestP p pes)
 
-showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
-  where myPacs = filterMine pacs
-        enemies = filterEnemies pacs
-        nextMoves = map (\p -> nextAction p pellets enemies) myPacs
+nextAction nv p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove nv p ps]
 
+calculateNextMoves notVisited pacs pellets = 
+  let myPacs = filterMine pacs
+      enemies = filterEnemies pacs
+  in map (\p -> nextAction notVisited p pellets enemies) myPacs
+
+format xs = intercalate " | " $ (map show xs)
+
+visited nv px = foldl' (\xs c -> S.delete c xs) nv (map pacCoord px)
+
+updateWorld acc w = 
+  let updateNotVisited = visited (notVisited acc) (_pacs w)
+  in withNotVisited w updateNotVisited
 
 doMagic :: World -> IO World -> IO World
 doMagic acc n = do
   new <- n
-  putStrLn $ showNextMove (_pacs new) (_pellets new)
-  return (new)
+  let updated = updateWorld acc new
+  hPutStrLn stderr $ show updated
+  let nextMoves = calculateNextMoves (S.toList $ notVisited updated) (_pacs updated) (_pellets updated)
+  putStrLn $ format nextMoves
+  return (updated)
 
 
 -------------------------------------------------------------------------------
@@ -184,25 +199,31 @@ main = do
   let width = read (input!!0) :: Int -- size of the grid
   let height = read (input!!1) :: Int -- top left corner is (x=0, y=0)
 
-  -- ignore for now as we will implement simplies algo for start
-  replicateM height $ do
-    row <- getLine
-    -- one line of the grid: space " " is floor, pound "#" is wall
-    hPutStrLn stderr row
-    return ()
+  grid <- readGrid height
+  let notVisited = fromList $ toCoord height $ map toFloorYs grid :: Set Coord
 
-  initial <- readNewWorldState
+  initial <- readNewWorldState notVisited
   -- game loop
-  foldM_ doMagic initial (pure initial : (repeat readNewWorldState))
+  foldM_ doMagic initial (pure initial : (repeat $ readNewWorldState empty))
   return ()
     
 
-readNewWorldState = do
+toFloorYs xs = map fst $ filter (\(y, c) -> c == ' ')  $ zip [0..] xs
+toCoord h xs = concat $ zipWith (\x xs -> zip (repeat x) xs) [0..h] xs
+
+readGrid height = replicateM height $ do
+  row <- getLine
+  -- one line of the grid: space " " is floor, pound "#" is wall
+  hPutStrLn stderr row
+  return (row)
+
+
+readNewWorldState xs = do
   readScore
   pacs <- readPacs
   pellets <- readPellets
 
-  return (World (fromList []) pacs pellets)
+  return (World xs pacs pellets)
 
 
 readScore = do
