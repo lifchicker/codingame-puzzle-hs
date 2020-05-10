@@ -150,14 +150,18 @@ pickSpeedStrategy p _ = []
 -- list of current issues:
 -- 1. problem: few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
 --    solution: 
--- 2. problem: "Prelude.tail: empty list" if no pellets is sight
---    solution: in the benning I know that all non-walls are pellets, keep the coords of all pellets and remove one when pac step on it coord
 -- possible improvements:
 -- 1. prioritize big pellets over small ones
 
+nextMove :: [Coord] -> Pac -> [Pellet] -> Action
 -- when no visibile pellets -> pick one from this list of not visited
 nextMove nv p [] = move p (findClosestC (coord p) nv)
-nextMove _ p pes = move p $ coord $ (findClosestP p pes)
+nextMove _ p pes = move p $ coord $ head $ (closestBig p $ filterClosestBigPallets p pes) ++ [closestSmall p pes]
+
+filterClosestBigPallets p pes = filter (\x -> ((value x == 10) && (distance p x < 5))) pes
+closestSmall p pes = findClosestP p pes
+closestBig p [] = []
+closestBig p pes = [findClosestP p pes]
 
 nextAction nv p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove nv p ps]
 
