@@ -5,6 +5,7 @@ import Data.List
 import Data.Maybe
 
 type Coord = (Int, Int)
+type Id = Int
 
 ---------------------------------------
 -- PacType
@@ -42,7 +43,6 @@ toAbilityType s = case s of
 ---------------------------------------
 -- Pac
 ---------------------------------------
-type Id = Int
 data Pac = Pac { pacid::Id
                , mine::Bool 
                , pacCoord::Coord
@@ -87,9 +87,10 @@ instance HasCoord Pellet where
 distance :: (Floating a, HasCoord c1, HasCoord c2) => c2 -> c1 -> a
 distance o1 o2 = distance2d (coord o1) (coord o2)
 
-distance2d (x1, y1) (x2, y2) = sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
-  where dx = x1 - x2
-        dy = y1 - y2
+distance2d (x1, y1) (x2, y2) = 
+  let dx = x1 - x2
+      dy = y1 - y2
+  in sqrt $ fromIntegral $ ((dx*dx) + (dy*dy))
 
 isClose o1 o2 = (distance o1 o2) < 2
 
@@ -134,6 +135,9 @@ pickFightStrategy p es = case strategies of
   where e = findClosest p es
         strategies = msum [switchIfCanBeat p e]
 
+pickSpeedStrategy p [] = if and [canUseAbility p] then [speed p] else []
+pickSpeedStrategy p _ = []
+
 -- list of current issues:
 -- 1. problem: few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
 --    solution: 
@@ -142,7 +146,7 @@ pickFightStrategy p es = case strategies of
 --              when no visibile pellets -> pick one from this list
 nextMove p pes = move p (findClosest p pes)
 
-nextAction p ps es = head $ (pickFightStrategy p es) ++ [nextMove p ps]
+nextAction p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove p ps]
 
 showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
   where myPacs = filterMine pacs
@@ -183,14 +187,13 @@ main = do
     hPutStrLn stderr input_line
     let visiblepaccount = read input_line :: Int -- all your pacs and enemy pacs in sight
 
-    pacs <- replicateM visiblepaccount $ readPacs
-    -- putStrLn (show pacs)
+    pacs <- replicateM visiblepaccount $ readAndParse pacFromString
 
     input_line <- getLine
     hPutStrLn stderr input_line
     let visiblepelletcount = read input_line :: Int -- all pellets in sight
 
-    pellets <- replicateM visiblepelletcount $ readPellets
+    pellets <- replicateM visiblepelletcount $ readAndParse pelletFromString
 
     -- MOVE <pacId> <x> <y>
     putStrLn $ showNextMove pacs pellets
@@ -208,12 +211,6 @@ pacFromString input_line = Pac pacid mine (x,y) (toPacType typeid) speedturnslef
         abilitycooldown = read (input!!6) :: Int -- the number of turns until you can request a new ability for this pac (SWITCH and SPEED)
 
 
-readPacs = do
-  input_line <- getLine
-  hPutStrLn stderr input_line
-  return (pacFromString input_line)
-
-
 pelletFromString input_line = Pellet (x,y) value
   where
         input = words input_line
@@ -222,7 +219,7 @@ pelletFromString input_line = Pellet (x,y) value
         value = read (input!!2) :: Int -- amount of points this pellet is worth
   
 
-readPellets = do
+readAndParse parser = do
   input_line <- getLine
   hPutStrLn stderr input_line
-  return (pelletFromString input_line)
+  return (parser input_line)
