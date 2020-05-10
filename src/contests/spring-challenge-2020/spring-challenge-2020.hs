@@ -163,7 +163,7 @@ closestBig p [] = []
 closestBig p pes = [findClosestP p pes]
 
 -- when choosing pellet, remove all pellets in 3x3 square around friendly pacs
-around (x, y) = [(a, b) | a <- [(x - 1)..(x + 1)], b <- [(y - 1)..(y + 1)]]
+around (x, y) = [(a, b) | a <- [(x - 2)..(x + 2)], b <- [(y - 2)..(y + 2)]]
 allExcluded xs = concat $ map (\p -> around (coord p)) xs
 excludeAroundPacs exs fs = filter (\p -> (coord p) `notElem` exs) fs
 
@@ -174,7 +174,7 @@ friendlyPacs p = filter (\x -> pacid x /= pacid p)
 calculateNextActions notVisited pacs pellets = 
   let myPacs = filterMine pacs
       enemies = filterEnemies pacs
-  in map (\p -> nextAction notVisited p pellets enemies (friendlyPacs p myPacs)) myPacs
+  in map (\p -> nextAction notVisited p pellets enemies (friendlyPacs p pacs)) myPacs
 
 format xs = intercalate " | " $ (map show xs)
 
