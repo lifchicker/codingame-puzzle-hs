@@ -32,6 +32,8 @@ getOffenderType t = case t of
                     ROCK -> PAPER
 
 getOffenderTypeAgainst p = getOffenderType (pacType p)
+
+
 ---------------------------------------
 -- AbilityType
 ---------------------------------------
@@ -81,6 +83,7 @@ data Grid = Grid { width::Int
                  , height::Int
 } deriving Show
 
+
 ---------------------------------------
 -- HasCoord
 ---------------------------------------
@@ -102,6 +105,7 @@ distance2d (x1, y1) (x2, y2) =
 
 isClose o1 o2 = (distance o1 o2) < 2
 
+
 ---------------------------------------
 -- Action
 ---------------------------------------
@@ -121,6 +125,7 @@ speed p = Speed (pacid p)
 
 switch p t = Switch (pacid p) t
 switchAgains p t = switch p $ getOffenderTypeAgainst t
+
 
 -------------------------------------------------------------------------------
 ------------------------------------- AI --------------------------------------
@@ -147,35 +152,36 @@ pickFightStrategy p es = case strategies of
 pickSpeedStrategy p [] = if and [canUseAbility p] then [speed p] else []
 pickSpeedStrategy p _ = []
 
--- list of current issues:
--- 1. problem: few pacs aiming to same pellet -> this cause them to stuck in same moves all over again
---    solution: 
--- possible improvements:
--- 1. prioritize big pellets over small ones
-
 nextMove :: [Coord] -> Pac -> [Pellet] -> Action
 -- when no visibile pellets -> pick one from this list of not visited
 nextMove nv p [] = move p (findClosestC (coord p) nv)
 nextMove _ p pes = move p $ coord $ head $ (closestBig p $ filterClosestBigPallets p pes) ++ [closestSmall p pes]
 
-filterClosestBigPallets p pes = filter (\x -> ((value x == 10) && (distance p x < 5))) pes
-closestSmall p pes = findClosestP p pes
+filterClosestBigPallets p = filter (\x -> ((value x == 10) && (distance p x < 5)))
+closestSmall = findClosestP
 closestBig p [] = []
 closestBig p pes = [findClosestP p pes]
 
-nextAction nv p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove nv p ps]
+-- when choosing pellet, remove all pellets in 3x3 square around friendly pacs
+around (x, y) = [(a, b) | a <- [(x - 1)..(x + 1)], b <- [(y - 1)..(y + 1)]]
+allExcluded xs = concat $ map (\p -> around (coord p)) xs
+excludeAroundPacs exs fs = filter (\p -> (coord p) `notElem` exs) fs
 
-calculateNextMoves notVisited pacs pellets = 
+nextAction nv p ps es fs = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove nv p (excludeAroundPacs (allExcluded fs) ps)]
+
+friendlyPacs p = filter (\x -> pacid x /= pacid p)
+
+calculateNextActions notVisited pacs pellets = 
   let myPacs = filterMine pacs
       enemies = filterEnemies pacs
-  in map (\p -> nextAction notVisited p pellets enemies) myPacs
+  in map (\p -> nextAction notVisited p pellets enemies (friendlyPacs p myPacs)) myPacs
 
 format xs = intercalate " | " $ (map show xs)
 
-visited nv px = foldl' (\xs c -> S.delete c xs) nv (map pacCoord px)
+visited = foldl' (\xs c -> S.delete c xs)
 
 updateWorld acc w = 
-  let updateNotVisited = visited (notVisited acc) (_pacs w)
+  let updateNotVisited = visited (notVisited acc) (map pacCoord $ _pacs w)
   in withNotVisited w updateNotVisited
 
 doMagic :: World -> IO World -> IO World
@@ -183,7 +189,7 @@ doMagic acc n = do
   new <- n
   let updated = updateWorld acc new
   hPutStrLn stderr $ show updated
-  let nextMoves = calculateNextMoves (S.toList $ notVisited updated) (_pacs updated) (_pellets updated)
+  let nextMoves = calculateNextActions (S.toList $ notVisited updated) (_pacs updated) (_pellets updated)
   putStrLn $ format nextMoves
   return (updated)
 
