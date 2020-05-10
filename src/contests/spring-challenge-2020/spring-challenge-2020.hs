@@ -3,6 +3,8 @@ import System.IO
 import Control.Monad
 import Data.List
 import Data.Maybe
+import           Data.Set (Set, fromList, member, delete)
+
 
 type Coord = (Int, Int)
 type Id = Int
@@ -67,10 +69,14 @@ data Pellet = Pellet { pelletCoord::Coord
 ---------------------------------------
 -- World
 ---------------------------------------
-data World = World { _pacs::[Pac]
+data World = World { notVisited::Set Coord
+                   , _pacs::[Pac]
                    , _pellets::[Pellet]
 } deriving Show
 
+data Grid = Grid { width::Int
+                 , height::Int
+} deriving Show
 
 ---------------------------------------
 -- HasCoord
@@ -114,9 +120,9 @@ speed p = Speed (pacid p)
 switch p t = Switch (pacid p) t
 switchAgains p t = switch p $ getOffenderTypeAgainst t
 
----------------------------------------
--- AI
----------------------------------------
+-------------------------------------------------------------------------------
+------------------------------------- AI --------------------------------------
+-------------------------------------------------------------------------------
 
 filterMine pacs = filter mine pacs
 filterEnemies pacs = filter (not.mine) pacs
@@ -144,6 +150,8 @@ pickSpeedStrategy p _ = []
 -- 2. problem: "Prelude.tail: empty list" if no pellets is sight
 --    solution: in the benning I know that all non-walls are pellets, keep the coords of all pellets and remove one when pac step on it coord
 --              when no visibile pellets -> pick one from this list
+-- possible improvements:
+-- 1. prioritize big pellets over small ones
 nextMove p pes = move p (findClosest p pes)
 
 nextAction p ps es = head $ (pickFightStrategy p es) ++ (pickSpeedStrategy p es) ++ [nextMove p ps]
@@ -154,9 +162,16 @@ showNextMove pacs pellets = intercalate " | " $ (map show nextMoves)
         nextMoves = map (\p -> nextAction p pellets enemies) myPacs
 
 
----------------------------------------
--- MAIN --
----------------------------------------
+doMagic :: World -> IO World -> IO World
+doMagic acc n = do
+  new <- n
+  putStrLn $ showNextMove (_pacs new) (_pellets new)
+  return (new)
+
+
+-------------------------------------------------------------------------------
+------------------------------------ MAIN -------------------------------------
+-------------------------------------------------------------------------------
 main :: IO ()
 main = do
   hSetBuffering stdout NoBuffering -- DO NOT REMOVE
@@ -176,27 +191,36 @@ main = do
     hPutStrLn stderr row
     return ()
 
+  initial <- readNewWorldState
   -- game loop
-  forever $ do
-    input_line <- getLine
-    hPutStrLn stderr input_line
-    let input = words input_line
-    let myscore = read (input!!0) :: Int
-    let opponentscore = read (input!!1) :: Int
-    input_line <- getLine
-    hPutStrLn stderr input_line
-    let visiblepaccount = read input_line :: Int -- all your pacs and enemy pacs in sight
+  foldM_ doMagic initial (pure initial : (repeat readNewWorldState))
+  return ()
+    
 
-    pacs <- replicateM visiblepaccount $ readAndParse pacFromString
+readNewWorldState = do
+  readScore
+  pacs <- readPacs
+  pellets <- readPellets
 
-    input_line <- getLine
-    hPutStrLn stderr input_line
-    let visiblepelletcount = read input_line :: Int -- all pellets in sight
+  return (World (fromList []) pacs pellets)
 
-    pellets <- replicateM visiblepelletcount $ readAndParse pelletFromString
 
-    -- MOVE <pacId> <x> <y>
-    putStrLn $ showNextMove pacs pellets
+readScore = do
+  input_line <- getLine
+  hPutStrLn stderr input_line
+  let input = words input_line
+  let myscore = read (input!!0) :: Int
+  let opponentscore = read (input!!1) :: Int
+  return ()
+
+
+readPacs = do
+  input_line <- getLine
+  hPutStrLn stderr input_line
+  let visiblepaccount = read input_line :: Int -- all your pacs and enemy pacs in sight
+
+  pacs <- replicateM visiblepaccount $ readAndParse pacFromString
+  return (pacs)
 
 
 pacFromString input_line = Pac pacid mine (x,y) (toPacType typeid) speedturnsleft abilitycooldown
@@ -209,6 +233,15 @@ pacFromString input_line = Pac pacid mine (x,y) (toPacType typeid) speedturnslef
         typeid = input!!4 -- the pac's type (ROCK or PAPER or SCISSORS)
         speedturnsleft = read (input!!5) :: Int -- the number of remaining turns before the speed effect fades
         abilitycooldown = read (input!!6) :: Int -- the number of turns until you can request a new ability for this pac (SWITCH and SPEED)
+
+
+readPellets = do
+  input_line <- getLine
+  hPutStrLn stderr input_line
+  let visiblepelletcount = read input_line :: Int -- all pellets in sight
+
+  pellets <- replicateM visiblepelletcount $ readAndParse pelletFromString
+  return (pellets)
 
 
 pelletFromString input_line = Pellet (x,y) value
