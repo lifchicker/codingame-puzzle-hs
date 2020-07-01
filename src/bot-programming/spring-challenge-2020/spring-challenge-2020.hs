@@ -1,4 +1,4 @@
--- https://www.codingame.com/contests/spring-challenge-2020
+-- https://www.codingame.com/multiplayer/bot-programming/spring-challenge-2020
 import System.IO
 import Control.Monad
 import Data.List
@@ -152,6 +152,9 @@ pickFightStrategy p es = case strategies of
 pickSpeedStrategy p [] = if and [canUseAbility p] then [speed p] else []
 pickSpeedStrategy p _ = []
 
+-- future improvement: calculate the solution for more optimal labyrinth walk around
+-- take into account that few pacs should be used
+-- take into account that there are passages to another side
 nextMove :: [Coord] -> Pac -> [Pellet] -> Action
 -- when no visibile pellets -> pick one from this list of not visited
 nextMove nv p [] = move p (findClosestC (coord p) nv)
