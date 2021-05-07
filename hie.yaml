@@ -6,6 +6,9 @@ cradle:
     - path: "././src/bot-programming/spring-challenge-2020/spring-challenge-2020.hs"
       component: "puzzle:exe:spring-challenge-2020"
 
+    - path: "././src/bot-programming/spring-challenge-2021/spring-challenge-2021.hs"
+      component: "puzzle:exe:spring-challenge-2021"
+
     - path: "././src/easy/1d-spreadsheet.hs"
       component: "puzzle:exe:1dspreadsheet"
 
@@ -20,3 +23,6 @@ cradle:
 
     - path: "././src/medium/there-is-no-spoon-episode-1.hs"
       component: "puzzle:exe:there-is-no-spoon-episode-1"
+
+    - path: "././src/medium/mars-lander-episode-2.hs"
+      component: "puzzle:exe:mars-lander-episode-2"
