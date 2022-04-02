@@ -26,3 +26,6 @@ cradle:
 
     - path: "././src/medium/mars-lander-episode-2.hs"
       component: "puzzle:exe:mars-lander-episode-2"
+
+    - path: "././src/medium/what-the-brainfuck.hs"
+      component: "puzzle:exe:what-the-brainfuck"
