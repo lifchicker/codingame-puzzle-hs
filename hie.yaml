@@ -29,3 +29,6 @@ cradle:
 
     - path: "././src/medium/what-the-brainfuck.hs"
       component: "puzzle:exe:what-the-brainfuck"
+
+    - path: "././src/bot-programming/spring-challenge-2022/spring-challenge-2022.hs"
+      component: "puzzle:exe:spring-challenge-2022.hs"
