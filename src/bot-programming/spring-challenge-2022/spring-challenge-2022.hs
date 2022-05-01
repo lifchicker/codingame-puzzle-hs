@@ -1,6 +1,9 @@
 -- https://www.codingame.com/contests/spring-challenge-2022
 
 -- {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE StrictData #-}
+{-# LANGUAGE BangPatterns #-}
+
 import System.IO
     ( stdout,
       stderr,
@@ -10,7 +13,9 @@ import System.IO
 import Control.Monad ( replicateM, foldM_ )
 import qualified Data.Map as M
 import Data.Tree ( Tree(Node, rootLabel) )
+import qualified Data.Vector as V
 import Data.List (sortBy)
+import Debug.Trace
 
 
 -- Debug helper function to print something
@@ -58,8 +63,8 @@ enemyBaseCoords b = bases M.! coords b
 data World =
   World
     { worldBase :: Base
-    , worldMyHeroes :: [Entity]
-    , worldMonsters :: [Entity]
+    , worldMyHeroes :: V.Vector Entity
+    , worldMonsters :: V.Vector Entity
     , worldEnemyHeroes :: [Entity]
     }
 
@@ -148,6 +153,7 @@ move = uncurry MOVE
 
 patrol (MyHero e _) = MyHero e . Just . move
 
+-- TODO: move to where monster will be, no where it is now
 attack (MyHero e _) = MyHero e . Just . move . coords
 
 redirect (MyHero e _) t (x, y) = MyHero e (Just $ CONTROL t x y)
@@ -172,6 +178,9 @@ isMyHero _ = False
 isAThreat (Monster _ md) = monsterThreatFor md == MyBase
 isAThreat _ = False
 
+isAThreatToEnemy (Monster _ md) = monsterThreatFor md == EnemyBase
+isAThreatToEnemy _ = False
+
 isMonster (Monster _ _) = True
 isMonster _ = False
 
@@ -192,10 +201,9 @@ updateWorld (World b hs ms es) as = World b as ms es
 simulate :: World -> World
 simulate w@(World b hs ms ehs) = World base hs ums ehs
   where
-    ums = interactMonstersWithHeroes advancedMonsters advancedHeroes
-    advancedMonsters = map advance ms
-    advancedHeroes = map  advance hs
-    base = b {baseMana = baseMana b - sum (map getSpellMana hs)}
+    !ums = advance <$> interactMonstersWithHeroes ms advancedHeroes
+    advancedHeroes = fmap  advance hs
+    !base = b {baseMana = baseMana b - sum (fmap getSpellMana hs)}
 
 advance :: Entity -> Entity
 advance (Monster e m) = Monster (e {entityCoord = addVector (entityCoord e) (monsterV m)}) m
@@ -203,14 +211,14 @@ advance (MyHero e c@(Just (MOVE x y))) = MyHero (e {entityCoord = applySpeedToVe
 advance h@(MyHero _ _) = h
 
 calculateNormalizedDirectionVector :: Coords -> Coords -> Coords
-calculateNormalizedDirectionVector (x1, y1) (x2, y2) =
+calculateNormalizedDirectionVector (!x1, !y1) (!x2, !y2) =
   let
     dx = x2 - x1
-    dy = y2 - x1
+    dy = y2 - y1
   in normalizeVector (dx, dy)
 
 normalizeVector :: Coords -> Coords
-normalizeVector (x, y) =
+normalizeVector (!x, !y) =
   let
     mag = magnitude x y
     ndx = round (fromIntegral x/mag)
@@ -218,24 +226,21 @@ normalizeVector (x, y) =
   in (ndx, ndy)
 
 applySpeedToVector :: Coords -> Int -> Coords
-applySpeedToVector (x, y) s = (x*s, y*s)
+applySpeedToVector (!x, !y) !s = (x*s, y*s)
 
 addVector :: Coords -> Coords -> Coords
-addVector (x, y) (dx, dy) = (x + dx, y + dy)
+addVector (!x, !y) (!dx, !dy) = (x + dx, y + dy)
 
 getSpellMana (MyHero _ (Just WIND {}))     = 10
 getSpellMana (MyHero _ (Just SHIELD {}))   = 10
 getSpellMana (MyHero _ (Just CONTROL {}))  = 10
 getSpellMana _ = 0
 
--- (b -> a -> b) -> b -> t a -> b
--- (a -> b -> b) -> b -> t a -> b
-interactMonstersWithHeroes :: [Entity] -> [Entity] -> [Entity]
 interactMonstersWithHeroes = foldr interactWithMonsters
 
-interactWithMonsters h = map (interactWithMonster h)
+interactWithMonsters h = fmap (interactWithMonster h)
 
-interactWithMonster h m =
+interactWithMonster !h !m =
   let
     ms = applyControlSpell h m
   in if distance h ms <= 800 then takeAHit ms else ms
@@ -243,9 +248,9 @@ interactWithMonster h m =
 applyControlSpell :: Entity -> Entity -> Entity
 applyControlSpell h@(MyHero _ (Just (CONTROL e tx ty))) m  = if getId e == getId m then redirectMonster m (tx, ty) else m
   where
-    redirectMonster (Monster me md) v = 
-      Monster 
-        ( me {entityCoord = applySpeedToVector (calculateNormalizedDirectionVector (entityCoord me) v) 400, entityIsControlled = True}) 
+    redirectMonster (Monster me md) v =
+      Monster
+        ( me {entityCoord = applySpeedToVector (calculateNormalizedDirectionVector (entityCoord me) v) 400, entityIsControlled = True})
         ( md {monsterThreatFor = EnemyBase})
 applyControlSpell _ m = m
 
@@ -258,7 +263,15 @@ class HasScore s where
   score :: s -> Float
 
 instance HasScore Entity where
-  score m@(Monster e md)  = fromIntegral $ monsterHealth md * (if isAThreat m then 2 else 1) * (if monsterNearBase md then 2 else 1)
+  score m@(Monster e md)  =
+    let
+      mh = monsterHealth md
+      threatMult = if isAThreat m then 2.0 else 1.0
+      nearBaseMult = if monsterNearBase md then 2.0 else 1.0
+      threatToEnemy = if isAThreatToEnemy m then 0.2 else 1.0
+      isControlled = if entityIsControlled e then 0.2 else 1.0
+    in fromIntegral mh * threatMult  * nearBaseMult * threatToEnemy * isControlled
+
   score (MyHero    e _)   = 0
   score (EnemyHero e)     = 0
 
@@ -267,11 +280,12 @@ instance HasScore Base where
     in fromIntegral baseScore
 
 calculateMonsterScore b m = score m * distanceFactor
+--calculateMonsterScore b m = distanceFactor
   where
-    distanceFactor = exp (1 - (safeDistance - distance2d (baseCoords b) (coords m) / safeDistance))
+    distanceFactor = exp (1 - (safeDistance - distance2d (baseCoords b) (coords m)) / safeDistance)
 
 instance HasScore World where
-  score (World b hs ms es) = score b + sum (map (calculateMonsterScore b) ms)
+  score (World b hs ms es) = score b + sum (fmap (calculateMonsterScore b) ms)
 
 -------------------------------------------------------------------------------
 -- main logic
@@ -292,19 +306,21 @@ filterMonsters = filter isMonster
 defaultAction :: p -> Entity -> Entity
 defaultAction b h = patrol h $ defaultPosition (getId h)
 
+offensiveActionableActions :: Base -> Entity -> Entity -> [Entity]
+offensiveActionableActions b h m = filter (isActionable b) $ offensiveActions b h m
+
 offensiveActions :: Base -> Entity -> Entity -> [Entity]
 offensiveActions b h m =
   [ attack h m
   , redirect h m (enemyBaseCoords b)
   ]
 
-heroActions :: Base -> Entity -> [Entity] -> [Entity]
 heroActions b h ms = filter (isActionable b) (ams ++ [da])
   where
-    ams = concatMap (offensiveActions b h) ms
-    da = defaultAction b h
+    !ams = concatMap (offensiveActionableActions b h) ms
+    !da = defaultAction b h
 
-generateActions (World base myHeroes monsters _) = map (\h -> heroActions base h monsters) myHeroes
+generateActions (World base myHeroes monsters _) = fmap (\h -> heroActions base h monsters) myHeroes
 
 isActionable :: Base -> Entity -> Bool
 isActionable b (MyHero _ Nothing)                     = False
@@ -312,7 +328,10 @@ isActionable b (MyHero e (Just c@(MOVE x y)))         = True
 isActionable b h@(MyHero ed (Just c@(CONTROL e x y))) = (baseMana b > 10) && isWithinRange c h e
 
 generateAllActions w = sequence $ generateActions w
-generateNewWorlds w = map (simulate . updateWorld w) (generateAllActions w)
+--generateNewWorlds !w = trace ("generateNewWorlds (a: " ++ show (length actions) ++ ")") map (simulate . updateWorld w) actions
+generateNewWorlds !w = map (simulate . updateWorld w) actions
+  where
+    !actions = generateAllActions w
 
 -------------------------------------------------------------------------------
 -- forecast
@@ -320,14 +339,14 @@ generateNewWorlds w = map (simulate . updateWorld w) (generateAllActions w)
 type ForecastTree = Tree World
 
 forecast :: Int -> Int -> World -> World
-forecast depth width ws = pickBestCandidate $ forecastWorlds depth width ws
+forecast depth width !ws = pickBestCandidate $ forecastWorlds depth width ws
 
 pickBestCandidate :: ForecastTree -> World
-pickBestCandidate (Node w ws) = snd $ head $ sortNodesByTreeScore $ map (\w -> (calculateTreeScore w, rootLabel w)) ws
+pickBestCandidate (Node w !ws) = snd $ head $ sortNodesByTreeScore $ map (\w -> (calculateTreeScore w, rootLabel w)) ws
   where
-    sortNodesByTreeScore :: [(Float, World)] -> [(Float, World)]
-    sortNodesByTreeScore = sortBy (\(s1, w1) (s2, w2) -> if s1 < s2 then LT else GT)
+    !sortNodesByTreeScore = sortBy (\(s1, w1) (s2, w2) -> if s1 < s2 then LT else GT)
 
+-- TODO: possible optimization is to add some coeff for "future world's score" like *0.9 or so
 calculateTreeScore :: ForecastTree -> Float
 calculateTreeScore (Node w []) = score w
 --calculateTreeScore (Node w ws) = score w + sum (map calculateTreeScore ws)
@@ -335,8 +354,11 @@ calculateTreeScore (Node w ws) = minimum (map calculateTreeScore ws)
 
 forecastWorlds :: Int -> Int -> World -> ForecastTree
 forecastWorlds 0 _ w = Node w []
-forecastWorlds depth width world = Node world (map (forecastWorlds (depth - 1) width) worlds)
-  where worlds = take width $ sortByScore $ generateNewWorlds world
+forecastWorlds depth width !world = Node world (map (forecastWorlds (depth - 1) width) worlds)
+  where
+    -- !worlds = trace ("scores : " ++ show (map (show . score) sorted)) take width sorted
+    !worlds = take width sorted
+    !sorted = sortByScore $ generateNewWorlds world
 
 sortByScore :: [World] -> [World]
 sortByScore = sortBy (\w1 w2 -> if score w1 < score w2 then LT else GT)
@@ -351,12 +373,18 @@ sortByScore = sortBy (\w1 w2 -> if score w1 < score w2 then LT else GT)
 -- redirect threat monsters to enemy base when spotted
 -- attack monsters when they're in a patrolling area
 
+simplifyWorld :: Int -> World -> World
+simplifyWorld targets (World b hs ms ehs) = World b hs highThreatMonsters ehs
+  where
+    highThreatMonsters = V.fromList $ take targets $ sortBy (\m1 m2 -> if distance b m1 < distance b m2 then LT else GT) (V.toList ms)
+
 gameLoop :: World -> IO World -> IO World
 gameLoop prevWorld newWorld = do
-  world <- newWorld
+  worldBig <- newWorld
+  let world = simplifyWorld 3 worldBig
   debug world
 
-  let newWorld = forecast 3 4 world
+  let newWorld = forecast 2 30 world
   -- debug world
   -- debug $ score newWorld
 
@@ -413,6 +441,8 @@ readWorld b () = do
   base <- readBaseStats b
   [enemyHealth, enemyMana] <- readInts
   entities <- readEntities
-  let myHeros = filterMyHeroes entities
-  let monsters = filterMonsters entities
+  let myHeros = V.fromList $ filterMyHeroes entities
+  let monsters = V.fromList $ filterMonsters entities
   return $ World base myHeros monsters []
+
+worldFromList b hs ms = World b (V.fromList hs) (V.fromList ms)
