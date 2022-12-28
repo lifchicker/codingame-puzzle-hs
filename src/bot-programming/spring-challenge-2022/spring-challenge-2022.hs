@@ -25,7 +25,7 @@ debug = hPutStrLn stderr . show
 mapWidth = 17630
 mapHeight = 9000
 
-safeDistance = 9897 -- half the distance across the map
+safeDistance = 8000 -- half the distance across the map
 
 type EntityId = Int
 type Coords = (Int, Int)
@@ -154,7 +154,7 @@ move = uncurry MOVE
 patrol (MyHero e _) = MyHero e . Just . move
 
 -- TODO: move to where monster will be, no where it is now
-attack (MyHero e _) = MyHero e . Just . move . coords
+attack (MyHero e _) = MyHero e . Just . move . coords . advance
 
 redirect (MyHero e _) t (x, y) = MyHero e (Just $ CONTROL t x y)
 
@@ -201,9 +201,11 @@ updateWorld (World b hs ms es) as = World b as ms es
 simulate :: World -> World
 simulate w@(World b hs ms ehs) = World base hs ums ehs
   where
-    !ums = advance <$> interactMonstersWithHeroes ms advancedHeroes
+    !ums = updateVector b . advance <$> interactMonstersWithHeroes ms advancedHeroes
     advancedHeroes = fmap  advance hs
     !base = b {baseMana = baseMana b - sum (fmap getSpellMana hs)}
+
+updateVector b m = if distance b m < 5000 then redirectMonster m (coords b) else m
 
 advance :: Entity -> Entity
 advance (Monster e m) = Monster (e {entityCoord = addVector (entityCoord e) (monsterV m)}) m
@@ -248,44 +250,15 @@ interactWithMonster !h !m =
 applyControlSpell :: Entity -> Entity -> Entity
 applyControlSpell h@(MyHero _ (Just (CONTROL e tx ty))) m  = if getId e == getId m then redirectMonster m (tx, ty) else m
   where
-    redirectMonster (Monster me md) v =
-      Monster
-        ( me {entityCoord = applySpeedToVector (calculateNormalizedDirectionVector (entityCoord me) v) 400, entityIsControlled = True})
-        ( md {monsterThreatFor = EnemyBase})
 applyControlSpell _ m = m
 
+redirectMonster (Monster me md) v =
+  Monster
+    ( me {entityCoord = applySpeedToVector (calculateNormalizedDirectionVector (entityCoord me) v) 400, entityIsControlled = True})
+    ( md {monsterThreatFor = EnemyBase})
+
+
 takeAHit (Monster e m) = Monster e m {monsterHealth = monsterHealth m - 2}
-
--------------------------------------------------------------------------------
--- score
--------------------------------------------------------------------------------
-class HasScore s where
-  score :: s -> Float
-
-instance HasScore Entity where
-  score m@(Monster e md)  =
-    let
-      mh = monsterHealth md
-      threatMult = if isAThreat m then 2.0 else 1.0
-      nearBaseMult = if monsterNearBase md then 2.0 else 1.0
-      threatToEnemy = if isAThreatToEnemy m then 0.2 else 1.0
-      isControlled = if entityIsControlled e then 0.2 else 1.0
-    in fromIntegral mh * threatMult  * nearBaseMult * threatToEnemy * isControlled
-
-  score (MyHero    e _)   = 0
-  score (EnemyHero e)     = 0
-
-instance HasScore Base where
-  score (Base _ h m) = let baseScore = (if m < 0 then 1000 else h) - m
-    in fromIntegral baseScore
-
-calculateMonsterScore b m = score m * distanceFactor
---calculateMonsterScore b m = distanceFactor
-  where
-    distanceFactor = exp (1 - (safeDistance - distance2d (baseCoords b) (coords m)) / safeDistance)
-
-instance HasScore World where
-  score (World b hs ms es) = score b + sum (fmap (calculateMonsterScore b) ms)
 
 -------------------------------------------------------------------------------
 -- main logic
@@ -332,6 +305,48 @@ generateAllActions w = sequence $ generateActions w
 generateNewWorlds !w = map (simulate . updateWorld w) actions
   where
     !actions = generateAllActions w
+
+-------------------------------------------------------------------------------
+-- score
+-------------------------------------------------------------------------------
+-- score priority:
+-- enemy on a base
+-- distance from monster closest to base
+-- distance from default position
+-- cast control
+-- attack monster
+
+class HasScore s where
+  score :: s -> Float
+
+instance HasScore Entity where
+  score m@(Monster e md)  =
+    let
+      mh = monsterHealth md
+      threatMult = if isAThreat m then 3.0 else 1.0
+      nearBaseMult = if monsterNearBase md then 5.0 else 1.0
+      threatToEnemy = if isAThreatToEnemy m then 0.1 else 1.0
+    in fromIntegral mh * threatMult * nearBaseMult
+
+  score (MyHero    e _)   = 100
+  score (EnemyHero e)     = 1
+
+instance HasScore Base where
+  score (Base _ h m) = let baseScore = (if m < 0 then 1000 else h)
+    in fromIntegral baseScore - (fromIntegral m/5)
+
+calculateMonsterScore b m = score m + linearDistanceFactor 2000 (baseCoords b) m
+
+distanceFactor d t e = exp (1 - (d - distance2d t (coords e)) / d)
+linearDistanceFactor d t e = abs (distance2d t (coords e)) / d
+calculateHeroeScore b ms h = score h * monsterDistanceFactor
+  where
+    baseDistanceFactor = linearDistanceFactor 1000 (defaultPosition (getId h)) h
+    monsterDistanceFactor = 10 * calculateDistanceFromHeroToTargetMonsters (coords $ V.head ms) h
+calculateDistanceFromHeroToTargetMonsters = linearDistanceFactor 400
+
+instance HasScore World where
+  score (World b hs ms es) = score b + sum (fmap (calculateHeroeScore b ms) hs) + sum (fmap (calculateMonsterScore b) ms)
 
 -------------------------------------------------------------------------------
 -- forecast
@@ -381,7 +396,7 @@ simplifyWorld targets (World b hs ms ehs) = World b hs highThreatMonsters ehs
 gameLoop :: World -> IO World -> IO World
 gameLoop prevWorld newWorld = do
   worldBig <- newWorld
-  let world = simplifyWorld 3 worldBig
+  let world = simplifyWorld 4 worldBig
   debug world
 
   let newWorld = forecast 2 30 world
